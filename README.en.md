@@ -31,7 +31,6 @@ whoever flashes it owns the consequences.
 * A recovery that can `adb sideload` a full OTA package: this ROM's own
   recovery, OrangeFox or TWRP for cerro all work.
 * `adb` and `fastboot` on your computer (Google's `platform-tools`).
-* At least 50% battery.
 
 The package is a **full OTA** carrying `payload.bin`. It installs to the
 inactive slot and **does not touch `/data`**: apps, settings and files stay
@@ -114,6 +113,22 @@ fastboot reboot
 ```
 
 Patching an image from a different build gives you a boot loop.
+
+### Recovery
+
+The release includes `recovery.img` from this same build. You need it in two
+cases: your current recovery cannot `adb sideload`, or you want the stock
+recovery back after OrangeFox or TWRP.
+
+```sh
+adb reboot bootloader
+fastboot flash recovery recovery.img
+fastboot reboot recovery
+```
+
+The partition is slot-suffixed: check the active slot with
+`adb shell getprop ro.boot.slot_suffix` and name it explicitly if needed
+(`recovery_a` or `recovery_b`).
 
 ### Rolling back
 

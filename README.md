@@ -31,7 +31,6 @@ Evolution-X-Devices.
 * Recovery, умеющий `adb sideload` полного OTA-пакета: подойдут штатный
   recovery этой же прошивки, OrangeFox или TWRP под cerro.
 * `adb` и `fastboot` на компьютере (`platform-tools` от Google).
-* Заряд от 50%.
 
 Пакет — **полный OTA** с `payload.bin`. Он ставится в неактивный слот и
 **не трогает `/data`**: приложения, настройки и файлы остаются на месте.
@@ -115,6 +114,22 @@ fastboot reboot
 ```
 
 Патч образа от другой сборки даст загрузку в петлю.
+
+### Recovery
+
+В релизе лежит `recovery.img` этой же сборки. Нужен он в двух случаях: если
+текущий recovery не умеет `adb sideload`, и если нужно вернуть штатный
+recovery после OrangeFox или TWRP.
+
+```sh
+adb reboot bootloader
+fastboot flash recovery recovery.img
+fastboot reboot recovery
+```
+
+Раздел слот-суффиксный: проверьте активный слот через
+`adb shell getprop ro.boot.slot_suffix` и при необходимости укажите его явно
+(`recovery_a` или `recovery_b`).
 
 ### Откат
 
