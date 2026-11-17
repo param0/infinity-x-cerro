@@ -1,5 +1,7 @@
 # Project Infinity X 17 для nubia Z60 Ultra (cerro) — неофициальная сборка
 
+*[English version](README.en.md)*
+
 Android 17 (SDK 37) на nubia Z60 Ultra / NX721J. Собрано из исходников
 Project Infinity X ветки `17` на деревьях устройства от nukisystems и
 Evolution-X-Devices.
