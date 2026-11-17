@@ -1,0 +1,81 @@
+diff --git a/AndroidProducts.mk b/AndroidProducts.mk
+index fe081cf..0c5c6dc 100644
+--- a/AndroidProducts.mk
++++ b/AndroidProducts.mk
+@@ -4,4 +4,6 @@
+ #
+ 
+ PRODUCT_MAKEFILES := \
+-    $(LOCAL_DIR)/lineage_cerro.mk
++    $(LOCAL_DIR)/lineage_cerro.mk \
++    $(LOCAL_DIR)/infinity_cerro.mk
++COMMON_LUNCH_CHOICES := infinity_cerro-userdebug
+diff --git a/BoardConfig.mk b/BoardConfig.mk
+index 18cb72d..3d222b0 100644
+--- a/BoardConfig.mk
++++ b/BoardConfig.mk
+@@ -15,6 +15,7 @@ TARGET_KERNEL_CONFIG += \
+ 
+ # Properties
+ TARGET_VENDOR_PROP += $(DEVICE_PATH)/vendor.prop
++TARGET_PRODUCT_PROP += $(DEVICE_PATH)/product.prop
+ 
+ # Security patch
+ BOOT_SECURITY_PATCH := 2025-12-01
+diff --git a/infinity_cerro.mk b/infinity_cerro.mk
+new file mode 100644
+index 0000000..fb86559
+--- /dev/null
++++ b/infinity_cerro.mk
+@@ -0,0 +1,41 @@
++#
++# SPDX-FileCopyrightText: The LineageOS Project
++# SPDX-License-Identifier: Apache-2.0
++#
++
++# Inherit from those products. Most specific first.
++$(call inherit-product, $(SRC_TARGET_DIR)/product/core_64_bit_only.mk)
++$(call inherit-product, $(SRC_TARGET_DIR)/product/full_base_telephony.mk)
++
++# Inherit from device.
++$(call inherit-product, device/nubia/cerro/device.mk)
++
++# Inherit some common Lineage stuff.
++$(call inherit-product, vendor/infinity/config/common_full_phone.mk)
++
++# Boot animation
++TARGET_SCREEN_HEIGHT := 2480
++TARGET_SCREEN_WIDTH := 1116
++
++PRODUCT_BRAND := nubia
++PRODUCT_DEVICE := cerro
++PRODUCT_MANUFACTURER := nubia
++PRODUCT_MODEL := NX721J
++PRODUCT_NAME := infinity_cerro
++PRODUCT_SYSTEM_DEVICE := PQ83A01
++PRODUCT_SYSTEM_NAME := PQ83A01-UN
++
++PRODUCT_GMS_CLIENTID_BASE := android-zte
++
++PRODUCT_BUILD_PROP_OVERRIDES += \
++    BuildDesc="PQ83A01-UN PQ83A01 15 AQ3A.240812.002 20250916.013811 release-keys" \
++    BuildFingerprint=nubia/PQ83A01-UN/PQ83A01:15/AQ3A.240812.002/20250916.013811:user/release-keys \
++    DeviceName=$(PRODUCT_SYSTEM_DEVICE) \
++    DeviceProduct=$(PRODUCT_SYSTEM_NAME)
++
++# --- флаги Project Infinity X (добавлено build-infinity-cerro.sh)
++INFINITY_MAINTAINER := "sasha_paramonov"
++WITH_GAPPS := true
++# TARGET_HAS_UDFPS уже выставлен в device/nubia/sm8650-common/common.mk
++
++# About phone — в device/nubia/cerro/product.prop, см. шаг 3.
+diff --git a/product.prop b/product.prop
+new file mode 100644
+index 0000000..54428c9
+--- /dev/null
++++ b/product.prop
+@@ -0,0 +1,4 @@
++# About phone (читает Project Infinity X), добавлено build-infinity-cerro.sh
++ro.product.marketname=nubia Z60 Ultra
++ro.infinity.soc=Snapdragon 8 Gen 3
++ro.infinity.camera=50MP + 50MP + 64MP

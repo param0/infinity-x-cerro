@@ -1,0 +1,138 @@
+diff --git a/packages/SystemUI/res/layout/status_bar.xml b/packages/SystemUI/res/layout/status_bar.xml
+index dc6b09f20..ce2365ec5 100644
+--- a/packages/SystemUI/res/layout/status_bar.xml
++++ b/packages/SystemUI/res/layout/status_bar.xml
+@@ -205,8 +205,10 @@
+         </FrameLayout>
+     </LinearLayout>
+ 
++    <!-- Часы вынесены из centered_area: туда StatusBarRoot.kt кладёт
++         ComposeView на всю ширину, и gravity="center" перестаёт работать. -->
+     <com.android.keyguard.AlphaOptimizedLinearLayout
+-        android:id="@+id/centered_area"
++        android:id="@+id/clock_center_area"
+         android:gravity="center"
+         android:orientation="horizontal"
+         android:layout_width="match_parent"
+@@ -230,6 +232,17 @@
+ 
+     </com.android.keyguard.AlphaOptimizedLinearLayout>
+ 
++    <com.android.keyguard.AlphaOptimizedLinearLayout
++        android:id="@+id/centered_area"
++        android:gravity="center"
++        android:orientation="horizontal"
++        android:layout_width="match_parent"
++        android:layout_height="match_parent"
++        android:paddingTop="@dimen/status_bar_padding_top"
++        android:clipChildren="false"
++        android:clipToPadding="false"
++        />
++
+     <com.android.systemui.infinity.batterybar.BatteryBarController
+         android:id="@+id/battery_bar"
+         android:layout_width="match_parent"
+diff --git a/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBarControllerImpl.java b/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBarControllerImpl.java
+index 3cb8771cf..20916f043 100644
+--- a/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBarControllerImpl.java
++++ b/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBarControllerImpl.java
+@@ -108,6 +108,10 @@ public class NavigationBarControllerImpl implements
+     /** A displayId - nav bar maps. */
+     @VisibleForTesting
+     SparseArray<NavigationBar> mNavigationBars = new SparseArray<>();
++    /** Счётчик попыток создать панель, см. createNavigationBar(). */
++    private final android.util.SparseIntArray mNavBarRetries = new android.util.SparseIntArray();
++    private static final int NAV_BAR_MAX_RETRIES = 20;
++    private static final long NAV_BAR_RETRY_DELAY_MS = 500;
+ 
+     /** Local cache for {@link IWindowManager#hasNavigationBar(int)}. */
+     private SparseBooleanArray mHasNavBarOrTaskbar = new SparseBooleanArray();
+@@ -412,6 +416,26 @@ public class NavigationBarControllerImpl implements
+         final int displayId = display.getDisplayId();
+         final boolean isOnDefaultDisplay = displayId == mDisplayTracker.getDefaultDisplayId();
+ 
++        // Панель для этого дисплея уже есть — второй раз создавать нельзя.
++        // Без этой проверки SystemUI падает насмерть (проверено на устройстве,
++        // 78 записей в dropbox за секунду):
++        //   BadTokenException: Unable to add window -- another window of
++        //   type 2019 already exists
++        //     at NavigationBar.onInit
++        //     at NavigationBarControllerImpl.createNavigationBar
++        //     at CommandQueueInitializer.start
++        // и вместе с ним не создаётся KeyguardService, то есть умирает весь
++        // SystemUI. Причина в том, что путей создания два —
++        // updateNavbarForTaskbar() (срабатывает на смену режима навигации) и
++        // createNavigationBars() из CommandQueueInitializer, — и проверка
++        // стояла только в первом. Отсюда и падение при любой настройке
++        // навигации, и сломанный SystemUI на старте системы.
++        // recreateNavigationBar() эта проверка не мешает: он сначала делает
++        // removeNavigationBar(), и к моменту вызова записи в карте уже нет.
++        if (mNavigationBars.get(displayId) != null) {
++            return;
++        }
++
+         if (!canCreateNavBarOrTaskBar(displayId)) {
+             return;
+         }
+@@ -436,7 +460,35 @@ public class NavigationBarControllerImpl implements
+         NavigationBarComponent component = mNavigationBarComponentFactory.create(
+                 context, savedState);
+         NavigationBar navBar = component.getNavigationBar();
+-        navBar.init();
++        try {
++            navBar.init();
++        } catch (android.view.WindowManager.BadTokenException e) {
++            // Окно навигационной панели уже занято — как правило, им владеет
++            // предыдущий экземпляр SystemUI, которого ещё не успели прибрать.
++            // Раньше это исключение уходило наверх, роняло KeyguardService и
++            // вместе с ним весь SystemUI; тот перезапускался, снова натыкался
++            // на чужое окно и падал опять — замкнутый круг, из-за которого
++            // система долго грузилась со сломанным SystemUI, а любая правка
++            // настроек навигации его убивала. Проверено на устройстве: 125
++            // падений за одну загрузку, все с
++            //   BadTokenException: another window of type 2019 already exists
++            // Теперь просто ждём и пробуем снова: чужое окно исчезает, как
++            // только систему покидает его владелец.
++            final int tries = mNavBarRetries.get(displayId) + 1;
++            mNavBarRetries.put(displayId, tries);
++            navBar.destroyView();
++            if (tries <= NAV_BAR_MAX_RETRIES) {
++                Log.w(TAG, "Окно навигационной панели занято, попытка " + tries
++                        + " из " + NAV_BAR_MAX_RETRIES, e);
++                mContext.getMainThreadHandler().postDelayed(
++                        () -> createNavigationBar(display, savedState, result),
++                        NAV_BAR_RETRY_DELAY_MS);
++            } else {
++                Log.e(TAG, "Навигационная панель так и не создалась", e);
++            }
++            return;
++        }
++        mNavBarRetries.delete(displayId);
+         mNavigationBars.put(displayId, navBar);
+ 
+         navBar.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+diff --git a/packages/SystemUI/src/com/android/systemui/statusbar/phone/PhoneStatusBarView.java b/packages/SystemUI/src/com/android/systemui/statusbar/phone/PhoneStatusBarView.java
+index e7b859811..fdf61bcfe 100644
+--- a/packages/SystemUI/src/com/android/systemui/statusbar/phone/PhoneStatusBarView.java
++++ b/packages/SystemUI/src/com/android/systemui/statusbar/phone/PhoneStatusBarView.java
+@@ -516,6 +516,20 @@ public class PhoneStatusBarView extends FrameLayout implements Callbacks {
+                 winRotation == Surface.ROTATION_0 ? -insets.left : 0;
+         centeredAreaParams.rightMargin =
+                 winRotation == Surface.ROTATION_0 ? -insets.right : 0;
++
++        View clockCenterArea = findViewById(R.id.clock_center_area);
++        if (clockCenterArea != null) {
++            if (clockCenterArea instanceof ViewGroup) {
++                ((ViewGroup) clockCenterArea).setClipToPadding(false);
++                ((ViewGroup) clockCenterArea).setClipChildren(false);
++            }
++            LayoutParams clockCenterAreaParams =
++                    (LayoutParams) clockCenterArea.getLayoutParams();
++            clockCenterAreaParams.leftMargin =
++                    winRotation == Surface.ROTATION_0 ? -insets.left : 0;
++            clockCenterAreaParams.rightMargin =
++                    winRotation == Surface.ROTATION_0 ? -insets.right : 0;
++        }
+     }
+ 
+     interface HasCornerCutoutFetcher {

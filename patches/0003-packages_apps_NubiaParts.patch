@@ -1,0 +1,585 @@
+diff --git a/sepolicy/private/compat/202404/202404.ignore.cil b/sepolicy/private/compat/202404/202404.ignore.cil
+index b5bbe81..abef8ba 100644
+--- a/sepolicy/private/compat/202404/202404.ignore.cil
++++ b/sepolicy/private/compat/202404/202404.ignore.cil
+@@ -6,4 +6,5 @@
+ (typeattributeset new_objects
+   ( new_objects
+     sysfs_fan
+-    sysfs_gamekey))
++    sysfs_gamekey
++    nubia_parts))
+diff --git a/sepolicy/private/compat/202504/202504.ignore.cil b/sepolicy/private/compat/202504/202504.ignore.cil
+new file mode 100644
+index 0000000..abef8ba
+--- /dev/null
++++ b/sepolicy/private/compat/202504/202504.ignore.cil
+@@ -0,0 +1,10 @@
++;; new_objects - a collection of types that have been introduced that have no
++;;   analogue in older policy.  Thus, we do not need to map these types to
++;;   previous ones.  Add here to pass checkapi tests.
++(type new_objects)
++(typeattribute new_objects)
++(typeattributeset new_objects
++  ( new_objects
++    sysfs_fan
++    sysfs_gamekey
++    nubia_parts))
+diff --git a/sepolicy/private/nubia_parts.te b/sepolicy/private/nubia_parts.te
+new file mode 100644
+index 0000000..433a90b
+--- /dev/null
++++ b/sepolicy/private/nubia_parts.te
+@@ -0,0 +1,51 @@
++# NubiaParts и его спутники (NubiaGameSwitch, NubiaPowerUtils, ...) ставятся
++# в system_ext/priv-app, то есть это платформенные приложения. С
++# BOARD_API_LEVEL >= 202604 treble_labeling_tests требует, чтобы такие
++# приложения были помечены coredomain-типом, а coredomain нельзя объявлять
++# в vendor-политике. Поэтому домен живёт здесь, на стороне платформы.
++typeattribute nubia_parts coredomain, mlstrustedsubject;
++
++app_domain(nubia_parts)
++
++allow nubia_parts {
++  activity_service
++  activity_task_service
++  audio_service
++  audioserver_service
++  autofill_service
++  batteryproperties_service
++  batterystats_service
++  content_capture_service
++  game_service
++  gpu_service
++  hint_service
++  media_session_service
++  netstats_service
++  sensorservice_service
++  surfaceflinger_service
++  trust_service
++  voiceinteraction_service
++  vibrator_manager_service
++}:service_manager find;
++
++allow nubia_parts system_app_data_file:dir create_dir_perms;
++allow nubia_parts system_app_data_file:{
++  file
++  lnk_file
++} create_file_perms;
++
++# sysfs_leds:file запрещён neverallow'ом в system/sepolicy/private/coredomain.te
++# (full_treble_only, из coredomain туда можно только init/apexd/ueventd/vold/
++# system_app). И не нужен: конкретные узлы переразмечены в
++# sepolicy/vendor/genfs_contexts — /class/leds/fan -> sysfs_fan,
++# /class/leds/sar (включая sar0/sar1) -> sysfs_gamekey. От sysfs_leds нужен
++# только обход каталога /sys/class/leds и чтение симлинков в нём; на dir и
++# lnk_file neverallow не распространяется.
++allow nubia_parts sysfs_leds:dir r_dir_perms;
++allow nubia_parts sysfs_leds:lnk_file r_file_perms;
++
++allow nubia_parts sysfs_fan:dir r_dir_perms;
++allow nubia_parts sysfs_fan:{ file lnk_file } rw_file_perms;
++
++allow nubia_parts sysfs_gamekey:dir r_dir_perms;
++allow nubia_parts sysfs_gamekey:{ file lnk_file } rw_file_perms;
+diff --git a/sepolicy/public/nubia_parts.te b/sepolicy/public/nubia_parts.te
+new file mode 100644
+index 0000000..4a4448d
+--- /dev/null
++++ b/sepolicy/public/nubia_parts.te
+@@ -0,0 +1,5 @@
++# Домен приложений NubiaParts. Объявлен в public, потому что правила на
++# vendor-типы (vendor_sysfs_battery_supply) остаются в vendor-политике,
++# а она видит только публичные типы платформы.
++# Атрибуты и сами правила — в private/nubia_parts.te (как system_app в AOSP).
++type nubia_parts, domain;
+diff --git a/sepolicy/vendor/nubiaparts.te b/sepolicy/vendor/nubiaparts.te
+index 9307acd..c73e06b 100644
+--- a/sepolicy/vendor/nubiaparts.te
++++ b/sepolicy/vendor/nubiaparts.te
+@@ -1,42 +1,5 @@
+-type nubia_parts, domain;
+-typeattribute nubia_parts mlstrustedsubject;
+-
+-app_domain(nubia_parts)
+-
+-allow nubia_parts {
+-  activity_service
+-  activity_task_service
+-  audio_service
+-  audioserver_service
+-  autofill_service
+-  batteryproperties_service
+-  batterystats_service
+-  content_capture_service
+-  game_service
+-  gpu_service
+-  hint_service
+-  media_session_service
+-  netstats_service
+-  sensorservice_service
+-  surfaceflinger_service
+-  voiceinteraction_service
+-  vibrator_manager_service
+-}:service_manager find;
+-
+-allow nubia_parts system_app_data_file:dir create_dir_perms;
+-allow nubia_parts system_app_data_file:{
+-  file
+-  lnk_file
+-} create_file_perms;
+-
+-allow nubia_parts sysfs_leds:dir r_dir_perms;
+-allow nubia_parts sysfs_leds:{ file lnk_file } rw_file_perms;
+-
+-allow nubia_parts sysfs_fan:dir r_dir_perms;
+-allow nubia_parts sysfs_fan:{ file lnk_file } rw_file_perms;
+-
+-allow nubia_parts sysfs_gamekey:dir r_dir_perms;
+-allow nubia_parts sysfs_gamekey:{ file lnk_file } rw_file_perms;
+-
++# Доступ к vendor-типам. Сам домен nubia_parts объявлен в платформенной
++# политике (sepolicy/public + sepolicy/private): он coredomain, а coredomain
++# в vendor-политике объявлять нельзя (treble_labeling_tests).
+ allow nubia_parts vendor_sysfs_battery_supply:dir r_dir_perms;
+ allow nubia_parts vendor_sysfs_battery_supply:{ file lnk_file } rw_file_perms;
+diff --git a/src/org/lineageos/device/NubiaParts/helper/AndroidManifest.xml b/src/org/lineageos/device/NubiaParts/helper/AndroidManifest.xml
+index 323afa4..1a07299 100644
+--- a/src/org/lineageos/device/NubiaParts/helper/AndroidManifest.xml
++++ b/src/org/lineageos/device/NubiaParts/helper/AndroidManifest.xml
+@@ -6,7 +6,18 @@
+     android:versionCode="1"
+     android:versionName="1.0" >
+ 
++    <!-- Для системного окна-оверлея с чёрной точкой над подэкранной камерой.
++         Разрешение signature-уровня, приложение подписано платформенным ключом
++         (NubiaParts_defaults: certificate: "platform"), поэтому в privapp-allowlist
++         его добавлять не нужно. -->
++    <uses-permission android:name="android.permission.INTERNAL_SYSTEM_WINDOW"/>
++
++    <!-- persistent: процесс должен жить всегда, иначе некому следить за тем,
++         когда откроют фронтальную камеру. Флаг действует только для приложений
++         из системного образа — это как раз наш случай (system_ext/priv-app). -->
+     <application
++        android:name=".UdcDot"
++        android:persistent="true"
+         android:label="NubiaPartsHelper"
+         android:hasCode="true">
+ 
+diff --git a/src/org/lineageos/device/NubiaParts/helper/UdcDot.java b/src/org/lineageos/device/NubiaParts/helper/UdcDot.java
+new file mode 100644
+index 0000000..f85a748
+--- /dev/null
++++ b/src/org/lineageos/device/NubiaParts/helper/UdcDot.java
+@@ -0,0 +1,411 @@
++/*
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Чёрная точка над подэкранной фронтальной камерой (UDC) у nubia Z60 Ultra.
++ *
++ * У cerro фронтальная камера находится под матрицей, поэтому пока над ней
++ * светятся пиксели, сенсор снимает через них. Стоковая прошивка на время
++ * работы фронталки гасит этот участок — получается та самая «чёрная точка».
++ *
++ * В дереве под это была оставлена заготовка: CameraHelper детектил фронтальную
++ * камеру в onCameraAvailable/onCameraUnavailable, но обе ветки были пустые.
++ * Здесь заготовка доведена до рабочего вида: окно-оверлей системного типа с
++ * чёрным овалом показывается, пока фронтальная камера занята.
++ *
++ * Геометрия взята из
++ * device/nubia/sm8650-common/rro_overlays/FrameworksResTarget_Vendor/res/values/config.xml,
++ * где config_mainBuiltInDisplayCutoutRectApproximation описывает область камеры
++ * как прямоугольник 68 x 93 px по центру верхней кромки (суффикса @dp нет,
++ * значит пиксели). По умолчанию рисуется круг 68 px, вписанный в этот
++ * прямоугольник по вертикали (отступ сверху 13 px).
++ *
++ * Все размеры правятся на лету, без пересборки:
++ *   adb shell settings put secure udc_dot_width 72
++ *   adb shell settings put secure udc_dot_offset_y 10
++ *   adb shell settings put secure udc_dot_anim_ms 0     (без анимации)
++ *   adb shell settings put secure udc_dot_enabled 0
++ */
++
++package org.lineageos.device.NubiaParts.helper;
++
++import android.animation.Animator;
++import android.animation.AnimatorListenerAdapter;
++import android.app.Application;
++import android.database.ContentObserver;
++import android.graphics.Color;
++import android.graphics.PixelFormat;
++import android.graphics.drawable.GradientDrawable;
++import android.hardware.camera2.CameraAccessException;
++import android.hardware.camera2.CameraCharacteristics;
++import android.hardware.camera2.CameraManager;
++import android.hardware.display.DisplayManager;
++import android.os.Handler;
++import android.os.Looper;
++import android.provider.Settings;
++import android.util.Log;
++import android.view.Display;
++import android.view.Gravity;
++import android.view.Surface;
++import android.view.View;
++import android.view.WindowManager;
++import android.view.animation.PathInterpolator;
++
++import java.util.concurrent.Executor;
++
++public class UdcDot extends Application {
++
++    private static final String TAG = "NubiaUdcDot";
++
++    static final String KEY_ENABLED = "udc_dot_enabled";
++    static final String KEY_WIDTH = "udc_dot_width";
++    static final String KEY_HEIGHT = "udc_dot_height";
++    static final String KEY_OFFSET_X = "udc_dot_offset_x";
++    static final String KEY_OFFSET_Y = "udc_dot_offset_y";
++    static final String KEY_ANIM_MS = "udc_dot_anim_ms";
++
++    private static final int DEF_ENABLED = 1;
++    private static final int DEF_WIDTH = 72;  // выверено на устройстве
++    private static final int DEF_HEIGHT = 71;  // на 3 px ниже, выверено на устройстве
++    private static final int DEF_OFFSET_X = 3;   // выверено на устройстве
++    private static final int DEF_OFFSET_Y = 18;  // выверено на устройстве
++    private static final int DEF_ANIM_MS = 260;
++
++    // Масштаб, с которого точка раскрывается и в который сворачивается.
++    // Строго меньше 1: окно размером ровно с точку, и всё, что крупнее,
++    // обрезалось бы по краям.
++    private static final float SHRUNK = 0.25f;
++
++    // Кривые Material: «мягкое» раскрытие с быстрым началом и долгим
++    // успокоением, и зеркальное сворачивание. Ровные ease-in/ease-out
++    // выглядят механически, эти — заметно мягче.
++    private static final PathInterpolator GROW =
++            new PathInterpolator(0.05f, 0.7f, 0.1f, 1.0f);
++    private static final PathInterpolator SHRINK =
++            new PathInterpolator(0.3f, 0.0f, 0.8f, 0.15f);
++
++    private final Handler mHandler = new Handler(Looper.getMainLooper());
++    private final Executor mExecutor = mHandler::post;
++
++    private WindowManager mWindowManager;
++    private CameraManager mCameraManager;
++    private View mDot;
++    private String mFrontCameraId;
++    private boolean mInUse;
++    private boolean mShown;
++    private boolean mHiding;
++
++    @Override
++    public void onCreate() {
++        super.onCreate();
++        try {
++            mWindowManager = getSystemService(WindowManager.class);
++            mCameraManager = getSystemService(CameraManager.class);
++            if (mWindowManager == null || mCameraManager == null) {
++                Log.e(TAG, "Нет WindowManager/CameraManager, точка работать не будет");
++                return;
++            }
++            mFrontCameraId = findFrontCameraId();
++            mCameraManager.registerAvailabilityCallback(mExecutor, mAvailabilityCallback);
++            registerSettingsObserver();
++            registerDisplayListener();
++            Log.i(TAG, "Готов, фронтальная камера: " + mFrontCameraId);
++        } catch (Throwable t) {
++            // Процесс persistent: падение здесь уронило бы его в цикл перезапусков.
++            Log.e(TAG, "Не удалось инициализироваться", t);
++        }
++    }
++
++    private String findFrontCameraId() {
++        try {
++            for (String id : mCameraManager.getCameraIdList()) {
++                if (isFront(id)) {
++                    return id;
++                }
++            }
++        } catch (CameraAccessException e) {
++            Log.e(TAG, "Не удалось получить список камер", e);
++        }
++        return null;
++    }
++
++    private boolean isFront(String cameraId) {
++        if (cameraId == null) {
++            return false;
++        }
++        if (cameraId.equals(mFrontCameraId)) {
++            return true;
++        }
++        try {
++            final CameraCharacteristics c = mCameraManager.getCameraCharacteristics(cameraId);
++            final Integer facing = c.get(CameraCharacteristics.LENS_FACING);
++            return facing != null && facing == CameraCharacteristics.LENS_FACING_FRONT;
++        } catch (CameraAccessException | IllegalArgumentException e) {
++            // id может относиться к камере, которой нет в публичном списке
++            return false;
++        }
++    }
++
++    private final CameraManager.AvailabilityCallback mAvailabilityCallback =
++            new CameraManager.AvailabilityCallback() {
++                @Override
++                public void onCameraAvailable(String cameraId) {
++                    if (isFront(cameraId)) {
++                        setInUse(false);
++                    }
++                }
++
++                @Override
++                public void onCameraUnavailable(String cameraId) {
++                    if (isFront(cameraId)) {
++                        setInUse(true);
++                    }
++                }
++            };
++
++    private void setInUse(boolean inUse) {
++        if (mInUse == inUse) {
++            return;
++        }
++        mInUse = inUse;
++        // Лог намеренный: если точка залипнет, он сразу покажет, чья это вина —
++        // наша (события пришли, а точка осталась) или приложения, которое не
++        // отпустило камеру (события «свободна» просто нет).
++        Log.i(TAG, "фронтальная камера " + (inUse ? "занята" : "свободна"));
++        update();
++    }
++
++    private void update() {
++        final boolean wanted = mInUse && getInt(KEY_ENABLED, DEF_ENABLED) != 0;
++        if (wanted) {
++            show();
++        } else {
++            hide();
++        }
++    }
++
++    private void ensureDot() {
++        if (mDot != null) {
++            return;
++        }
++        final GradientDrawable oval = new GradientDrawable();
++        oval.setShape(GradientDrawable.OVAL);
++        oval.setColor(Color.BLACK);
++        mDot = new View(this);
++        mDot.setBackground(oval);
++    }
++
++    /**
++     * Короткое появление: точка проступает и чуть «раскрывается». Длительность
++     * умышленно маленькая — пока идёт анимация, пиксели над сенсором ещё светятся.
++     * При выключенных в системе анимациях ViewPropertyAnimator сам сведёт
++     * длительность к нулю (animator_duration_scale), отдельной проверки не нужно.
++     */
++    private void show() {
++        ensureDot();
++        final long duration = animMs();
++        try {
++            if (mShown) {
++                // Либо повернули экран, либо камеру открыли снова, пока точка
++                // ещё догорала — в обоих случаях возвращаем её в полный вид.
++                mDot.animate().cancel();
++                mHiding = false;
++                mWindowManager.updateViewLayout(mDot, buildParams());
++            } else {
++                mDot.setAlpha(duration > 0 ? 0f : 1f);
++                mDot.setScaleX(duration > 0 ? SHRUNK : 1f);
++                mDot.setScaleY(duration > 0 ? SHRUNK : 1f);
++                mWindowManager.addView(mDot, buildParams());
++                mShown = true;
++                mHiding = false;
++            }
++            if (duration > 0) {
++                mDot.animate()
++                        .alpha(1f).scaleX(1f).scaleY(1f)
++                        .setDuration(duration)
++                        .setInterpolator(GROW)
++                        .setListener(null)
++                        .start();
++            } else {
++                mDot.setAlpha(1f);
++                mDot.setScaleX(1f);
++                mDot.setScaleY(1f);
++            }
++        } catch (Throwable t) {
++            Log.e(TAG, "Не удалось показать точку", t);
++        }
++    }
++
++    private void hide() {
++        if (!mShown || mHiding) {
++            return;
++        }
++        final long duration = animMs();
++        if (duration <= 0) {
++            removeDot();
++            return;
++        }
++        mHiding = true;
++        // Слушатель, а не withEndAction: тот не срабатывает при отмене анимации,
++        // и mHiding залипал бы в true — после чего hide() выходил бы сразу и
++        // точка оставалась на экране навсегда. onAnimationEnd у
++        // ViewPropertyAnimator вызывается в обоих случаях.
++        mDot.animate()
++                .alpha(0f).scaleX(SHRUNK).scaleY(SHRUNK)
++                .setDuration(duration)
++                .setInterpolator(SHRINK)
++                .setListener(new AnimatorListenerAdapter() {
++                    @Override
++                    public void onAnimationEnd(Animator animation) {
++                        mHiding = false;
++                        mDot.animate().setListener(null);
++                        // Камеру могли успеть открыть снова, пока точка гасла —
++                        // тогда убирать её нельзя.
++                        if (!mInUse) {
++                            removeDot();
++                        }
++                    }
++                })
++                .start();
++    }
++
++    private void removeDot() {
++        mHiding = false;
++        if (!mShown) {
++            return;
++        }
++        try {
++            mWindowManager.removeViewImmediate(mDot);
++        } catch (Throwable t) {
++            Log.e(TAG, "Не удалось убрать точку", t);
++        }
++        mShown = false;
++    }
++
++    private long animMs() {
++        return Math.max(0, Math.min(1000, getInt(KEY_ANIM_MS, DEF_ANIM_MS)));
++    }
++
++    private WindowManager.LayoutParams buildParams() {
++        final int w = getInt(KEY_WIDTH, DEF_WIDTH);
++        final int h = getInt(KEY_HEIGHT, DEF_HEIGHT);
++        final int ox = getInt(KEY_OFFSET_X, DEF_OFFSET_X);
++        final int oy = getInt(KEY_OFFSET_Y, DEF_OFFSET_Y);
++
++        final WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
++                WindowManager.LayoutParams.TYPE_SYSTEM_OVERLAY,
++                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
++                        | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
++                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
++                        | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
++                PixelFormat.TRANSLUCENT);
++        lp.setTitle(TAG);
++        lp.layoutInDisplayCutoutMode =
++                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
++        lp.setFitInsetsTypes(0);
++        // Без этого точка выходит полупрозрачной (проверено на устройстве):
++        // TYPE_SYSTEM_OVERLAY попадает под isSystemAlertWindowType(), и
++        // DisplayPolicy.adjustWindowParamsLw принудительно опускает alpha до
++        // mMaximumObscuringOpacityForTouch (по умолчанию 0.8) у недоверенного
++        // окна с FLAG_NOT_TOUCHABLE — чтобы касания гарантированно проходили
++        // насквозь. Одного INTERNAL_SYSTEM_WINDOW мало: WindowState
++        // .isWindowTrustedOverlay() требует ещё и PRIVATE_FLAG_TRUSTED_OVERLAY,
++        // который и ставит setTrustedOverlay(). Тип не меняем на
++        // TYPE_SECURE_SYSTEM_OVERLAY (он доверенный сам по себе) только чтобы
++        // точка оставалась видимой в screencap и её можно было выверять.
++        lp.setTrustedOverlay();
++
++        // Сенсор физически у верхней кромки панели. При повороте экрана система
++        // поворачивает систему координат окна, а камера остаётся на месте,
++        // поэтому «верх» пересчитываем в ту кромку, где она оказалась:
++        // ROTATION_90 — натуральный верх уходит влево, ROTATION_270 — вправо.
++        switch (getRotation()) {
++            case Surface.ROTATION_90:
++                lp.gravity = Gravity.LEFT | Gravity.CENTER_VERTICAL;
++                lp.width = h;
++                lp.height = w;
++                lp.x = oy;
++                lp.y = -ox;
++                break;
++            case Surface.ROTATION_180:
++                lp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
++                lp.width = w;
++                lp.height = h;
++                lp.x = -ox;
++                lp.y = oy;
++                break;
++            case Surface.ROTATION_270:
++                lp.gravity = Gravity.RIGHT | Gravity.CENTER_VERTICAL;
++                lp.width = h;
++                lp.height = w;
++                lp.x = oy;
++                lp.y = ox;
++                break;
++            default:
++                lp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
++                lp.width = w;
++                lp.height = h;
++                lp.x = ox;
++                lp.y = oy;
++                break;
++        }
++        return lp;
++    }
++
++    private int getRotation() {
++        final DisplayManager dm = getSystemService(DisplayManager.class);
++        if (dm == null) {
++            return Surface.ROTATION_0;
++        }
++        final Display display = dm.getDisplay(Display.DEFAULT_DISPLAY);
++        return display != null ? display.getRotation() : Surface.ROTATION_0;
++    }
++
++    private void registerDisplayListener() {
++        final DisplayManager dm = getSystemService(DisplayManager.class);
++        if (dm == null) {
++            return;
++        }
++        dm.registerDisplayListener(new DisplayManager.DisplayListener() {
++            @Override
++            public void onDisplayAdded(int displayId) {}
++
++            @Override
++            public void onDisplayRemoved(int displayId) {}
++
++            @Override
++            public void onDisplayChanged(int displayId) {
++                // Только update(): раньше здесь был show(), и любое изменение
++                // дисплея (например переключение частоты обновления, которое
++                // делает запись кружка в мессенджере) возвращало точку в
++                // полную видимость прямо посреди затухания. mInUse к тому
++                // моменту уже false, и скрыть её было больше некому.
++                if (displayId == Display.DEFAULT_DISPLAY && mShown) {
++                    update();
++                }
++            }
++        }, mHandler);
++    }
++
++    private void registerSettingsObserver() {
++        final ContentObserver observer = new ContentObserver(mHandler) {
++            @Override
++            public void onChange(boolean selfChange) {
++                update();
++            }
++        };
++        for (String key : new String[] {
++                KEY_ENABLED, KEY_WIDTH, KEY_HEIGHT,
++                KEY_OFFSET_X, KEY_OFFSET_Y, KEY_ANIM_MS }) {
++            getContentResolver().registerContentObserver(
++                    Settings.Secure.getUriFor(key), false, observer);
++        }
++    }
++
++    private int getInt(String key, int def) {
++        try {
++            return Settings.Secure.getInt(getContentResolver(), key, def);
++        } catch (Throwable t) {
++            return def;
++        }
++    }
++}

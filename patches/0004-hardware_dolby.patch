@@ -1,0 +1,93 @@
+diff --git a/configs/vintf/config.mk b/configs/vintf/config.mk
+new file mode 100644
+index 0000000..e3cd35c
+--- /dev/null
++++ b/configs/vintf/config.mk
+@@ -0,0 +1,26 @@
++# Объявление HAL Dolby в VINTF.
++#
++# device/nubia/sm8650-common/BoardConfigCommon.mk уже содержит строку
++#   -include hardware/dolby/configs/vintf/config.mk
++# то есть дерево устройства рассчитывает получить манифест отсюда, но в ветке
++# cnb репозитория hardware_dolby этого каталога нет. Без него hwservicemanager
++# отвечает
++#   getTransport: Cannot find entry vendor.dolby.hardware.dms@2.0::IDms/default
++#   in either framework or device VINTF manifest
++# сервис не регистрируется, выходит с кодом 1, init перезапускает его каждые
++# 5 секунд, а приложение Dolby падает следом с
++#   AudioEffect: set/get parameter error.
++#
++# Через PRODUCT_COPY_FILES это класть нельзя — сборка отвечает
++#   VINTF metadata found in PRODUCT_COPY_FILES ... use DEVICE_MANIFEST_FILE /
++#   DEVICE_MATRIX_FILE / vintf_compatibility_matrix / vintf_fragments instead
++DEVICE_MANIFEST_FILE += \
++    hardware/dolby/configs/vintf/vendor.dolby.hardware.dms@2.0-service.xml
++
++# Одного объявления в манифесте мало: check_vintf требует, чтобы HAL был ещё и
++# разрешён в матрице совместимости, иначе сборка падает с
++#   The following instances are in the device manifest but not specified in
++#   framework compatibility matrix: vendor.dolby.hardware.dms@2.0::IDms/default
++# Файл взят из ветки cnb-old того же репозитория, где он есть.
++DEVICE_FRAMEWORK_COMPATIBILITY_MATRIX_FILE += \
++    hardware/dolby/configs/vintf/dolby_framework_matrix.xml
+diff --git a/configs/vintf/dolby_framework_matrix.xml b/configs/vintf/dolby_framework_matrix.xml
+new file mode 100644
+index 0000000..f157ff4
+--- /dev/null
++++ b/configs/vintf/dolby_framework_matrix.xml
+@@ -0,0 +1,18 @@
++<compatibility-matrix version="4.0" type="framework">
++    <hal format="hidl" optional="true">
++        <name>vendor.dolby.hardware.dms</name>
++        <version>2.0</version>
++        <interface>
++            <name>IDms</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl" optional="true">
++        <name>android.hardware.media.c2</name>
++        <version>1.0</version>
++        <interface>
++            <name>IComponentStore</name>
++            <instance>default1</instance>
++        </interface>
++    </hal>
++</compatibility-matrix>
+diff --git a/configs/vintf/vendor.dolby.hardware.dms@2.0-service.xml b/configs/vintf/vendor.dolby.hardware.dms@2.0-service.xml
+new file mode 100644
+index 0000000..f52fb36
+--- /dev/null
++++ b/configs/vintf/vendor.dolby.hardware.dms@2.0-service.xml
+@@ -0,0 +1,11 @@
++<manifest version="1.0" type="device">
++    <hal format="hidl">
++        <name>vendor.dolby.hardware.dms</name>
++        <transport>hwbinder</transport>
++        <version>2.0</version>
++        <interface>
++            <name>IDms</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++</manifest>
+diff --git a/sepolicy/vendor/hal_dms_default.te b/sepolicy/vendor/hal_dms_default.te
+index facdbef..2ab7032 100644
+--- a/sepolicy/vendor/hal_dms_default.te
++++ b/sepolicy/vendor/hal_dms_default.te
+@@ -12,3 +12,15 @@ unix_socket_connect(hal_dms_default, property, init)
+ 
+ binder_call(hal_dms_default, hal_audio_default)
+ binder_call(hal_dms_default, platform_app)
++
++# Добавлено build-infinity-cerro.sh. Без этого сервис Dolby крутится в цикле
++# перезапусков и Atmos не поднимается — проверено на устройстве, в логе каждые
++# 5 секунд:
++#   avc: denied { read } for name="u:object_r:vendor_audio_prop:s0"
++#        scontext=u:r:hal_dms_default:s0 tclass=file
++#   avc: denied { set } for property=persist.vendor.audio.scenario
++#        scontext=u:r:hal_dms_default:s0 tclass=property_service
++# vendor_audio_prop — тип из QTI-политики (device/qcom/sepolicy_vndr), в дереве
++# Dolby про него ничего не знают. set_prop закрывает оба отказа сразу: он
++# разворачивается в property_service set плюс get_prop, то есть чтение файла.
++set_prop(hal_dms_default, vendor_audio_prop)
